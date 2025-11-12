@@ -5,25 +5,35 @@
 [![Unlicense License][license-shield]][license-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
-# Event Deep Research
+# Deep Research Agent
 
-AI Agent that researchs the lifes of historical figures and extracts the events into a structured JSON timeline.
+**Generalized AI-powered research agent** that can perform deep research on any topic with pluggable research types. Originally built for biographical research, now supports **company research, market analysis, topic exploration, and custom research types**.
 
-<img src="media/event-deep-research.webp" alt="Event Deep Research" width="600"/>
+<img src="media/event-deep-research.webp" alt="Deep Research Agent" width="600"/>
 
 ## Table of Contents
 
-- [Event Deep Research](#event-deep-research)
+- [Deep Research Agent](#deep-research-agent)
   - [Table of Contents](#table-of-contents)
+  - [🌟 What's New](#-whats-new)
   - [Features](#features)
-  - [Demo / Example](#demo--example)
+  - [Available Research Types](#available-research-types)
+  - [Quick Start Examples](#quick-start-examples)
+    - [Biography Research](#biography-research)
+    - [Company Research](#company-research)
+    - [Market Research](#market-research)
+    - [Topic Research](#topic-research)
   - [🚀 Installation](#-installation)
     - [Prerequisites](#prerequisites)
     - [Setup](#setup)
   - [Usage](#usage)
     - [Via LangGraph Studio (Recommended)](#via-langgraph-studio-recommended)
-  - [Configuration (configuration.py)](#configuration-configurationpy)
-  - [Architecture / Internals](#architecture--internals)
+    - [Via Python Script](#via-python-script)
+  - [Creating Custom Research Types](#creating-custom-research-types)
+  - [Configuration](#configuration)
+  - [Architecture](#architecture)
+    - [Core Components](#core-components)
+    - [Research Type System](#research-type-system)
   - [Roadmap / Future Work](#roadmap--future-work)
   - [Contributing](#contributing)
   - [License](#license)
@@ -31,66 +41,120 @@ AI Agent that researchs the lifes of historical figures and extracts the events 
 
 ---
 
+## 🌟 What's New
+
+**v2.0 - Generalized Research System**
+
+- ✨ **Pluggable Research Types**: Easily add new research domains without modifying core code
+- 🏢 **Company Research**: Extract structured company profiles (leadership, products, financials)
+- 📊 **Market Research**: Analyze markets and industries (trends, players, outlook)
+- 📚 **Topic Research**: General-purpose research for any subject
+- 🎯 **Custom Research Types**: Create your own with minimal code (see [examples/add_custom_research_type.py](examples/add_custom_research_type.py))
+- 🔧 **Backward Compatible**: Existing biography research continues to work
+
 ## Features
 
-- Supervisor Agent with multiple tools (Research, think, Finish)
-- Merge Workflow to incorporate and deduplicate events from multiple sources
-- Support for OpenAI, Anthropic, Google, or Local models (Ollama)
+- **Multiple Research Types**: Biography, Company, Market, Topic, and Custom
+- **Supervisor Agent**: Coordinates workflow with multiple tools (Research, Think, Finish)
+- **Smart Merging**: Deduplicate and combine information from multiple sources
+- **Multi-Model Support**: OpenAI, Anthropic, Google, or Local models (Ollama)
+- **Extensible Architecture**: Add new research types in minutes
+- **LangGraph Studio**: Visual debugging and real-time monitoring
 
-## Demo / Example
+## Available Research Types
 
-https://github.com/user-attachments/assets/ebda1625-fdf6-4f3b-a5d2-319d6db40ec2
+| Research Type | Description | Output Schema |
+|--------------|-------------|---------------|
+| **Biography** | Historical figures, people | Chronological timeline of life events |
+| **Company** | Businesses, organizations | Company profile with facts by category |
+| **Market** | Industries, markets | Market insights and analysis |
+| **Topic** | General knowledge | Structured sections with key points |
+| **Custom** | *Your domain* | *Define your own* |
 
-**Input:**
+## Quick Start Examples
 
-```json
-{
-  "person_to_research": "Albert Einstein"
-}
+### Biography Research
+
+Research historical figures and extract structured life events:
+
+```python
+from src.graph import graph
+
+result = await graph.ainvoke({
+    "research_subject": "Albert Einstein",
+    "research_type": "biography"
+})
+
+# Output: Chronological timeline with events
+print(result["structured_output"])
+# [ChronologyEvent(name="Birth in Ulm", date={year: 1879}, ...), ...]
 ```
 
-**Output:**
-
+**Example Output:**
 ```json
 {
-  "structured_events": [
+  "structured_output": [
     {
+      "id": "birth_1879",
       "name": "Birth in Ulm",
-      "description": "Albert Einstein was born in Ulm, Germany to Hermann and Pauline Einstein",
+      "description": "Albert Einstein was born in Ulm, Germany",
       "date": {"year": 1879, "note": "March 14"},
-      "location": "Ulm, German Empire",
-      "id": "time-1879-03-14T00:00:00Z"
+      "location": "Ulm, German Empire"
     },
     {
-      "name": "Zurich Polytechnic",
-      "description": "Entered the Swiss Federal Polytechnic School in Zurich to study physics and mathematics",
-      "date": {"year": 1896, "note": ""},
-      "location": "Zurich, Switzerland",
-      "id": "time-1896-01-01T00:00:00Z"
-    },
-    {
-      "name": "Miracle Year Papers",
-      "description": "Published four groundbreaking papers on photoelectric effect, Brownian motion, special relativity, and mass-energy equivalence",
-      "date": {"year": 1905, "note": ""},
-      "location": "Bern, Switzerland",
-      "id": "time-1905-01-01T00:00:00Z"
-    },
-    {
+      "id": "nobel_1921",
       "name": "Nobel Prize in Physics",
-      "description": "Awarded Nobel Prize for his discovery of the law of the photoelectric effect",
+      "description": "Awarded Nobel Prize for photoelectric effect discovery",
       "date": {"year": 1921, "note": ""},
-      "location": "Stockholm, Sweden",
-      "id": "time-1921-01-01T00:00:00Z"
-    },
-    {
-      "name": "Death in Princeton",
-      "description": "Albert Einstein died at Princeton Hospital after refusing surgery for an abdominal aortic aneurysm",
-      "date": {"year": 1955, "note": "April 18"},
-      "location": "Princeton, New Jersey, USA",
-      "id": "time-1955-04-18T00:00:00Z"
+      "location": "Stockholm, Sweden"
     }
   ]
 }
+```
+
+### Company Research
+
+Research companies and extract structured profiles:
+
+```python
+result = await graph.ainvoke({
+    "research_subject": "OpenAI",
+    "research_type": "company"
+})
+
+# Output: CompanyProfile with categorized facts
+print(result["structured_output"])
+# CompanyProfile(company_name="OpenAI", facts=[...])
+```
+
+### Market Research
+
+Analyze markets and industries:
+
+```python
+result = await graph.ainvoke({
+    "research_subject": "AI Chip Market",
+    "research_type": "market"
+})
+
+# Output: MarketReport with insights
+print(result["structured_output"])
+# MarketReport(market_name="AI Chip Market", insights=[...])
+```
+
+### Topic Research
+
+Research any general topic:
+
+```python
+result = await graph.ainvoke({
+    "research_subject": "Quantum Computing",
+    "research_type": "topic"
+})
+
+# Output: TopicReport with structured sections
+print(result["structured_output"])
+# TopicReport(topic_name="Quantum Computing", sections=[...])
 ```
 
 ## 🚀 Installation
@@ -104,7 +168,7 @@ https://github.com/user-attachments/assets/ebda1625-fdf6-4f3b-a5d2-319d6db40ec2
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/bernatsampera/event-deep-research.git
+git clone https://github.com/autonomica-xyz/event-deep-research.git
 cd event-deep-research
 
 # 2. Create virtual environment and install dependencies
@@ -114,10 +178,10 @@ uv sync
 # 3. Set up environment variables
 cp .env.example .env
 # Edit .env with your API keys:
-# FIRECRAWL_BASE_URL  (https://api.firecrawl.com/v1)
-# - FIRECRAWL_API_KEY (required for production, optional for local testing)
-# - TAVILY_API_KEY (required)
-# - OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY (Change model in configuration.py)
+# - FIRECRAWL_API_KEY (required for web scraping)
+# - TAVILY_API_KEY (required for web search)
+# - OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY
+#   (Choose your preferred LLM provider)
 
 # 4. Start the development server
 uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.12 langgraph dev --allow-blocking
@@ -128,54 +192,188 @@ uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.12 lang
 
 ### Via LangGraph Studio (Recommended)
 
-1. Start the development server: `uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.12 langgraph dev --allow-blocking`
+1. Start the development server:
+   ```bash
+   uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.12 langgraph dev --allow-blocking
+   ```
+
 2. Open http://localhost:2024
+
 3. Select the `supervisor` graph
+
 4. Input your research query:
    ```json
    {
-     "person_to_research": "Albert Einstein"
+     "research_subject": "Tesla Inc",
+     "research_type": "company"
    }
    ```
+
 5. Watch the agent work in real-time!
 
-## Configuration (configuration.py)
+### Via Python Script
 
-    llm_model: Primary LLM model to use for both structured output and tools
+See the [examples/](examples/) directory for complete examples:
 
-    # Optional overrides to change the models used for different parts of the workflow
-    structured_llm_model: Override model for structured output
-    tools_llm_model: Override model for tools
-    chunk_llm_model: Small model for chunk biographical event detection
+- `biography_research.py` - Research historical figures
+- `company_research.py` - Research companies
+- `market_research.py` - Analyze markets
+- `topic_research.py` - Research any topic
+- `add_custom_research_type.py` - Create your own research type
 
-    # Maximum tokens for the models
-    structured_llm_max_tokens: Maximum tokens for structured output model
-    tools_llm_max_tokens: Maximum tokens for tools model
+```bash
+# Run a biography research example
+python examples/biography_research.py
 
-    # Maximum retry attempts for the models
-    max_structured_output_retries: Maximum retry attempts for structured output
-    max_tools_output_retries: Maximum retry attempts for tool calls
+# Run a company research example
+python examples/company_research.py
+```
 
-    # Values from graph files
-    default_chunk_size: Default chunk size for text processing
-    default_overlap_size: Default overlap size between chunks
-    max_content_length: Maximum content length to process
-    max_tool_iterations: Maximum number of tool iterations
-    max_chunks: Maximum number of chunks to process for biographical event detection
+## Creating Custom Research Types
 
-## Architecture / Internals
+Adding a new research type takes just a few steps:
 
-1. **Supervisor Agent** - Coordinates the entire workflow, decides next steps
-2. **Research Agent** - Finds relevant biographical sources, manages crawler and merge agents
-3. **URL Crawler** - Extracts content from web pages with Firecrawl
-4. **Merge Agent** - Combines and deduplicates events
+1. **Define your data models** (input/output schemas)
+2. **Implement ResearchType interface** (prompts, structuring logic)
+3. **Register your type** with the registry
+
+**Complete example:** [examples/add_custom_research_type.py](examples/add_custom_research_type.py)
+
+```python
+from src.research_types.base import ResearchType
+from src.research_types.registry import ResearchTypeRegistry
+
+class MyResearchType(ResearchType):
+    @property
+    def name(self) -> str:
+        return "my_type"
+
+    def get_supervisor_prompt(self) -> str:
+        # Return your supervisor prompt template
+        pass
+
+    def get_output_schema(self) -> Type[BaseModel]:
+        # Return your Pydantic output model
+        pass
+
+    # Implement other abstract methods...
+
+# Register it
+ResearchTypeRegistry.register(MyResearchType())
+
+# Use it
+result = await graph.ainvoke({
+    "research_subject": "My Subject",
+    "research_type": "my_type"
+})
+```
+
+## Configuration
+
+Located in `src/configuration.py`:
+
+```python
+class Configuration(BaseModel):
+    # Research type to use (biography, company, market, topic, etc.)
+    research_type: str = "biography"
+
+    # Primary LLM model for all tasks
+    llm_model: str = "google_genai:gemini-2.5-flash"
+
+    # Optional model overrides for specific tasks
+    structured_llm_model: str | None = None  # For JSON output
+    tools_llm_model: str | None = None       # For tool calling
+    chunk_llm_model: str | None = None       # For chunk processing
+
+    # Token limits
+    structured_llm_max_tokens: int = 4096
+    tools_llm_max_tokens: int = 4096
+
+    # Retry policies
+    max_structured_output_retries: int = 3
+    max_tools_output_retries: int = 3
+
+    # Processing constraints
+    default_chunk_size: int = 800
+    max_content_length: int = 100000
+    max_tool_iterations: int = 5
+    max_chunks: int = 20
+```
+
+**Supported Models:**
+- OpenAI: `openai:gpt-4-turbo`, `openai:gpt-3.5-turbo`
+- Anthropic: `anthropic:claude-3-5-sonnet-20241022`
+- Google: `google_genai:gemini-2.5-flash`, `google_genai:gemini-2.5-pro`
+- Ollama: `ollama:mistral-nemo`, `ollama:llama3.1`
+
+## Architecture
+
+### Core Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              SUPERVISOR AGENT (Generic)                      │
+│   - Loads appropriate ResearchType                          │
+│   - Uses research-type-specific prompts                     │
+│   - Coordinates all sub-agents                              │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+   ┌────▼──────────────────┐  ┌──▼────────────────────┐
+   │ RESEARCH AGENT        │  │ STRUCTURE OUTPUT      │
+   │ - Web search (Tavily) │  │ - Research-type aware │
+   │ - URL crawling        │  │ - Custom formatting   │
+   │ - Data merging        │  │ - JSON generation     │
+   └────┬──────────────────┘  └───────────────────────┘
+        │
+   ┌────┴──────────────────────────────────────┐
+   │                                            │
+┌──▼──────────────────┐        ┌───────────────▼──┐
+│ URL CRAWLER         │        │ MERGE AGENT       │
+│ - Firecrawl scrape  │        │ - Chunk text      │
+│ - Content extract   │        │ - Filter relevant │
+└─────────────────────┘        │ - Deduplicate     │
+                               └───────────────────┘
+```
+
+### Research Type System
+
+The system uses a **pluggable architecture** where each research type is self-contained:
+
+```
+src/research_types/
+├── base.py                 # ResearchType abstract class
+├── registry.py             # Central registry
+├── biography.py            # Biographical research
+├── company.py              # Company research
+├── market.py               # Market research
+├── topic.py                # General topic research
+└── __init__.py             # Auto-registration
+```
+
+Each research type defines:
+- **Supervisor prompts** - How to guide the research
+- **Data schemas** - What structure to accumulate data in
+- **Gap analysis prompts** - How to identify missing information
+- **Output formatting** - How to structure final results
+
+**Key Benefits:**
+- ✅ Add new research types without touching core code
+- ✅ Each type is isolated and testable
+- ✅ Easy to maintain and extend
+- ✅ Backward compatible
 
 <img src="media/kronologs-graph.webp" alt="Agent Graph" />
 
 ## Roadmap / Future Work
 
-- Add images to relevant events
-- Improve speed of merge graph
+- [ ] **Open Source Search**: Replace Tavily with SearXNG or Brave Search
+- [ ] **Open Source Scraping**: Replace Firecrawl with Playwright/Trafilatura
+- [ ] **Research Type Library**: More built-in types (product, scientific paper, etc.)
+- [ ] **Multimedia Support**: Add images and videos to research output
+- [ ] **Performance**: Improve merge agent speed
+- [ ] **Observability**: Enhanced LangSmith/Langfuse integration
 
 ## Contributing
 
@@ -187,7 +385,14 @@ We welcome contributions! This is a great project to learn:
 4. **Push** to the branch: `git push origin feature/amazing-feature`
 5. **Open** a Pull Request
 
-See the [open issues](https://github.com/bernatsampera/event-deep-research/issues) for a full list of proposed features and known issues.
+**Ideas for contributions:**
+- New research types (products, scientific papers, recipes, etc.)
+- Open-source tool replacements (search, scraping)
+- Performance optimizations
+- Documentation improvements
+- Test coverage
+
+See the [open issues](https://github.com/autonomica-xyz/event-deep-research/issues) for a full list of proposed features and known issues.
 
 ## License
 
@@ -198,18 +403,18 @@ Distributed under the MIT License. See `LICENSE.txt` for details.
 - **[LangChain](https://github.com/langchain-ai/langchain)** - Foundational LLM framework
 - **[LangGraph](https://github.com/langchain-ai/langgraph)** - Multi-agent orchestration
 - **[Open Deep Research](https://github.com/langchain-ai/open_deep_research)** - Research methodology inspiration
-- **[Firecrawl](https://www.firecrawl.com/)** - Web scraping
-- **[Tavily](https://tavily.ai/)** - Web search
+- **[Tavily](https://tavily.ai/)** - Web search (to be replaced with open source)
+- **[Firecrawl](https://www.firecrawl.com/)** - Web scraping (to be replaced with open source)
 
-[contributors-shield]: https://img.shields.io/github/contributors/bernatsampera/event-deep-research.svg?style=for-the-badge
-[contributors-url]: https://github.com/bernatsampera/event-deep-research/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/bernatsampera/event-deep-research.svg?style=for-the-badge
-[forks-url]: https://github.com/bernatsampera/event-deep-research/network/members
-[stars-shield]: https://img.shields.io/github/stars/bernatsampera/event-deep-research.svg?style=for-the-badge
-[stars-url]: https://github.com/bernatsampera/event-deep-research/stargazers
-[issues-shield]: https://img.shields.io/github/issues/bernatsampera/event-deep-research.svg?style=for-the-badge
-[issues-url]: https://github.com/bernatsampera/event-deep-research/issues
-[license-shield]: https://img.shields.io/github/license/bernatsampera/event-deep-research.svg?style=for-the-badge
-[license-url]: https://github.com/bernatsampera/event-deep-research/blob/master/LICENSE.txt
+[contributors-shield]: https://img.shields.io/github/contributors/autonomica-xyz/event-deep-research.svg?style=for-the-badge
+[contributors-url]: https://github.com/autonomica-xyz/event-deep-research/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/autonomica-xyz/event-deep-research.svg?style=for-the-badge
+[forks-url]: https://github.com/autonomica-xyz/event-deep-research/network/members
+[stars-shield]: https://img.shields.io/github/stars/autonomica-xyz/event-deep-research.svg?style=for-the-badge
+[stars-url]: https://github.com/autonomica-xyz/event-deep-research/stargazers
+[issues-shield]: https://img.shields.io/github/issues/autonomica-xyz/event-deep-research.svg?style=for-the-badge
+[issues-url]: https://github.com/autonomica-xyz/event-deep-research/issues
+[license-shield]: https://img.shields.io/github/license/autonomica-xyz/event-deep-research.svg?style=for-the-badge
+[license-url]: https://github.com/autonomica-xyz/event-deep-research/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://www.linkedin.com/in/bernat-sampera-195152107/

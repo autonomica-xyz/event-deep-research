@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 from langchain_tavily import TavilySearch
 from langgraph.graph import END, START, StateGraph
@@ -9,25 +9,32 @@ from src.configuration import Configuration
 from src.llm_service import create_llm_structured_model
 from src.research_events.merge_events.merge_events_graph import merge_events_app
 from src.services.url_service import URLService
-from src.state import CategoriesWithEvents
 from src.url_crawler.url_krawler_graph import url_crawler_app
 from src.utils import get_langfuse_handler
 
 
 class InputResearchEventsState(TypedDict):
+    """Input state for research events graph.
+
+    Now generic to support any research type (not just biography).
+    """
+
     research_question: str
-    existing_events: CategoriesWithEvents
+    existing_data: Any  # Changed from existing_events - can be any structure
     used_domains: list[str]
 
 
 class ResearchEventsState(InputResearchEventsState):
+    """State for research events graph with intermediate fields."""
+
     urls: list[str]
-    # Add this temporary field
-    extracted_events: str
+    extracted_data: str  # Changed from extracted_events
 
 
 class OutputResearchEventsState(TypedDict):
-    existing_events: CategoriesWithEvents
+    """Output state for research events graph."""
+
+    existing_data: Any  # Changed from existing_events
     used_domains: list[str]
 
 
@@ -140,7 +147,7 @@ def should_process_url_router(
 async def crawl_url(
     state: ResearchEventsState,
 ) -> Command[Literal["merge_events_and_update"]]:
-    """Crawls the next URL and updates the temporary state with new events."""
+    """Crawls the next URL and updates the temporary state with new data."""
     urls = state["urls"]
     url_to_process = urls[0]  # Always process the first one
     research_question = state.get("research_question", "")
@@ -152,27 +159,27 @@ async def crawl_url(
     result = await url_crawler_app.ainvoke(
         {"url": url_to_process, "research_question": research_question}
     )
-    extracted_events = result["extracted_events"]
-    # Go to the merge node, updating the state with the extracted events
+    extracted_data = result.get("extracted_events", "")  # Crawler still uses old name
+    # Go to the merge node, updating the state with the extracted data
     return Command(
         goto="merge_events_and_update",
-        update={"extracted_events": extracted_events},
+        update={"extracted_data": extracted_data},
     )
 
 
 async def merge_events_and_update(
     state: ResearchEventsState,
 ) -> Command[Literal["should_process_url_router"]]:
-    """Merges new events, removes the processed URL, and loops back to the router."""
-    existing_events = state.get("existing_events", CategoriesWithEvents())
-    extracted_events = state.get("extracted_events", "")
+    """Merges new data, removes the processed URL, and loops back to the router."""
+    existing_data = state.get("existing_data")
+    extracted_data = state.get("extracted_data", "")
     research_question = state.get("research_question", "")
 
     # Invoke the merge subgraph
     result = await merge_events_app.ainvoke(
         {
-            "existing_events": existing_events,
-            "extracted_events": extracted_events,
+            "existing_data": existing_data,
+            "extracted_data": extracted_data,
             "research_question": research_question,
         }
     )
@@ -183,10 +190,9 @@ async def merge_events_and_update(
     return Command(
         goto="should_process_url_router",
         update={
-            "existing_events": result["existing_events"],
+            "existing_data": result["existing_data"],
             "urls": remaining_urls,
             "used_domains": used_domains,
-            # "extracted_events": "",  # Clear the temporary state
         },
     )
 

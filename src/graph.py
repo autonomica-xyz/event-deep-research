@@ -13,15 +13,9 @@ from src.llm_service import (
     create_llm_structured_model,
     create_llm_with_tools,
 )
-from src.prompts import (
-    events_summarizer_prompt,
-    lead_researcher_prompt,
-    structure_events_prompt,
-)
 from src.research_events.research_events_graph import research_events_app
+from src.research_types import ResearchTypeRegistry
 from src.state import (
-    CategoriesWithEvents,
-    Chronology,
     FinishResearchTool,
     ResearchEventsTool,
     SupervisorState,
@@ -44,12 +38,24 @@ async def supervisor_node(
     state: SupervisorState,
     config: RunnableConfig,
 ) -> Command[Literal["supervisor_tools"]]:
-    """The 'brain' of the agent. It decides the next action."""
+    """The 'brain' of the agent. It decides the next action.
+
+    This node is now generic and works with any research type by loading
+    the appropriate research type and using its prompts.
+    """
+    # Get research type from state
+    research_type_name = state.get("research_type", "biography")
+    research_type = ResearchTypeRegistry.get(research_type_name)
+
+    # Standard tools available to all research types
     tools = [
         ResearchEventsTool,
         FinishResearchTool,
         think_tool,
     ]
+
+    # Add any research-type-specific tools
+    tools.extend(research_type.get_additional_tools())
 
     tools_model = create_llm_with_tools(tools=tools, config=config)
     messages = state.get("conversation_history", "")
@@ -57,12 +63,14 @@ async def supervisor_node(
     last_message = ""
     if len(messages_summary) > 0:
         last_message = messages[-1]
+
+    # Use research type's supervisor prompt
+    supervisor_prompt = research_type.get_supervisor_prompt()
     system_message = SystemMessage(
-        content=lead_researcher_prompt.format(
-            person_to_research=state["person_to_research"],
-            events_summary=state.get("events_summary", "Everything is missing"),
+        content=supervisor_prompt.format(
+            research_subject=state["research_subject"],
+            data_summary=state.get("data_summary", "Everything is missing"),
             last_message=last_message,
-            max_iterations=5,
         )
     )
 
@@ -84,13 +92,21 @@ async def supervisor_node(
 async def supervisor_tools_node(
     state: SupervisorState,
     config: RunnableConfig,
-) -> Command[Literal["supervisor", "structure_events"]]:
-    """The 'hands' of the agent. Executes tools and returns a Command for routing."""
-    existing_events = state.get(
-        "existing_events",
-        CategoriesWithEvents(early="", personal="", career="", legacy=""),
-    )
-    events_summary = state.get("events_summary", "")
+) -> Command[Literal["supervisor", "structure_output"]]:
+    """The 'hands' of the agent. Executes tools and returns a Command for routing.
+
+    This node is now generic and works with any research type.
+    """
+    # Get research type from state
+    research_type_name = state.get("research_type", "biography")
+    research_type = ResearchTypeRegistry.get(research_type_name)
+
+    # Get existing data (generic, could be any structure)
+    existing_data = state.get("existing_data")
+    if existing_data is None:
+        existing_data = research_type.get_initial_data_structure()
+
+    data_summary = state.get("data_summary", "")
     used_domains = state.get("used_domains", [])
     last_message = state["conversation_history"][-1]
     iteration_count = state.get("iteration_count", 0)
@@ -98,7 +114,7 @@ async def supervisor_tools_node(
 
     # If the LLM made no tool calls, we finish.
     if not last_message.tool_calls or exceeded_allowed_iterations:
-        return Command(goto="structure_events")
+        return Command(goto="structure_output")
 
     # This is the core logic for executing tools and updating state.
     all_tool_messages = []
@@ -108,7 +124,7 @@ async def supervisor_tools_node(
         tool_args = tool_call["args"]
 
         if tool_name == "FinishResearchTool":
-            return Command(goto="structure_events")
+            return Command(goto="structure_output")
 
         elif tool_name == "think_tool":
             # The 'think' tool is special: it just records a reflection.
@@ -127,25 +143,24 @@ async def supervisor_tools_node(
             result = await research_events_app.ainvoke(
                 {
                     "research_question": research_question,
-                    "existing_events": existing_events,
+                    "existing_data": existing_data,  # Generic field name
                     "used_domains": used_domains,
                 }
             )
-            existing_events = result["existing_events"]
+            existing_data = result["existing_data"]
             used_domains = result["used_domains"]
 
-            summarizer_prompt = events_summarizer_prompt.format(
-                existing_events=existing_events
-            )
+            # Use research type's summarizer prompt
+            summarizer_prompt = research_type.get_event_summarizer_prompt()
+            summarizer_formatted = summarizer_prompt.format(existing_data=existing_data)
             response = await create_llm_structured_model(config=config).ainvoke(
-                summarizer_prompt
+                summarizer_formatted
             )
 
-            existing_events = existing_events
-            events_summary = response.content
+            data_summary = response.content
             all_tool_messages.append(
                 ToolMessage(
-                    content="Called ResearchEventsTool and returned multiple events",
+                    content="Called ResearchEventsTool and returned research data",
                     tool_call_id=tool_call["id"],
                     name=tool_name,
                 )
@@ -155,74 +170,54 @@ async def supervisor_tools_node(
     return Command(
         goto="supervisor",
         update={
-            "existing_events": existing_events,
+            "existing_data": existing_data,
             "conversation_history": all_tool_messages,
             "used_domains": used_domains,
-            "events_summary": events_summary,
+            "data_summary": data_summary,
         },
     )
 
 
-async def structure_events(
+async def structure_output(
     state: SupervisorState, config: RunnableConfig
 ) -> Command[Literal["__end__"]]:
-    """Step 2: Structures the cleaned events into JSON format.
+    """Structures the accumulated research data into final output format.
+
+    This node is now generic and delegates to the research type's
+    structure_output method to handle type-specific structuring logic.
 
     Args:
-        state: Current researcher state with cleaned events text.
+        state: Current researcher state with accumulated research data.
         config: Runtime configuration with model settings.
 
     Returns:
-        Dictionary containing a list of structured chronology events.
+        Dictionary containing the structured output for this research type.
     """
-    print("--- Step 2: Structuring Events into JSON ---")
+    print("--- Structuring Research Output ---")
 
-    # Get the cleaned events from the previous step
-    existing_events = state.get("existing_events", "")
+    # Get research type from state
+    research_type_name = state.get("research_type", "biography")
+    research_type = ResearchTypeRegistry.get(research_type_name)
 
-    if not existing_events:
-        print("Warning: No cleaned events text found in state")
-        return {"chronology": []}
+    # Get the accumulated research data
+    existing_data = state.get("existing_data")
 
-    structured_llm = create_llm_structured_model(config=config, class_name=Chronology)
+    if not existing_data:
+        print("Warning: No research data found in state")
+        return {"structured_output": None}
 
-    early_prompt = structure_events_prompt.format(
-        existing_events=existing_events["early"]
-    )
-    career_prompt = structure_events_prompt.format(
-        existing_events=existing_events["career"]
-    )
-    personal_prompt = structure_events_prompt.format(
-        existing_events=existing_events["personal"]
-    )
-    legacy_prompt = structure_events_prompt.format(
-        existing_events=existing_events["legacy"]
-    )
+    # Delegate to the research type's structure_output method
+    result = await research_type.structure_output(existing_data, config)
 
-    early_response = await structured_llm.ainvoke(early_prompt)
-    career_response = await structured_llm.ainvoke(career_prompt)
-    personal_response = await structured_llm.ainvoke(personal_prompt)
-    legacy_response = await structured_llm.ainvoke(legacy_prompt)
-    # Invoke the second model to get the final structured output
-
-    all_events = (
-        early_response.events
-        + career_response.events
-        + personal_response.events
-        + legacy_response.events
-    )
-
-    return {
-        "structured_events": all_events,
-    }
+    return result
 
 
 workflow = StateGraph(SupervisorState, input_schema=SupervisorStateInput)
 
-# Add the two core nodes
+# Add the three core nodes
 workflow.add_node("supervisor", supervisor_node)
 workflow.add_node("supervisor_tools", supervisor_tools_node)
-workflow.add_node("structure_events", structure_events)
+workflow.add_node("structure_output", structure_output)  # Renamed from structure_events
 
 workflow.add_edge(START, "supervisor")
 
