@@ -1,6 +1,5 @@
 from typing import Any, Literal, TypedDict
 
-from langchain_tavily import TavilySearch
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import RunnableConfig
 from langgraph.types import Command
@@ -8,6 +7,7 @@ from pydantic import BaseModel, Field
 from src.configuration import Configuration
 from src.llm_service import create_llm_structured_model
 from src.research_events.merge_events.merge_events_graph import merge_events_app
+from src.search_providers import SearchProviderRegistry
 from src.services.url_service import URLService
 from src.url_crawler.url_krawler_graph import url_crawler_app
 from src.utils import get_langfuse_handler
@@ -42,37 +42,51 @@ class BestUrls(BaseModel):
     selected_urls: list[str] = Field(description="A list of the two best URLs.")
 
 
-def url_finder(
+async def url_finder(
     state: ResearchEventsState,
     config: RunnableConfig,
 ) -> Command[Literal["should_process_url_router"]]:
-    """Find the urls for the research_question"""
+    """Find URLs for the research question using configured search provider.
+
+    This function now uses the pluggable search provider system, allowing you to
+    use Tavily, Brave, DuckDuckGo, SearXNG, or custom search providers.
+    """
     research_question = state.get("research_question", "")
     used_domains = state.get("used_domains", [])
 
     if not research_question:
         raise ValueError("research_question is required")
 
-    tool = TavilySearch(
+    # Get configuration to check for search provider preference
+    configuration = Configuration.from_runnable_config(config)
+    search_provider_name = configuration.search_provider
+
+    # Get search provider (uses configured provider or auto-detects)
+    search_provider = SearchProviderRegistry.get(search_provider_name)
+    print(f"Using search provider: {search_provider.name}")
+
+    # Perform search
+    search_results = await search_provider.search(
+        query=research_question,
         max_results=6,
-        topic="general",
-        include_raw_content=False,
-        include_answer=False,
-        exclude_domains=used_domains,
+        excluded_domains=used_domains,
     )
 
-    result = tool.invoke({"query": research_question})
+    # Extract URLs from search results
+    urls = [result.url for result in search_results]
 
-    urls = [result["url"] for result in result["results"]]
+    if not urls:
+        print(f"Warning: No search results found for query: {research_question}")
+        return Command(goto=END, update={"urls": []})
 
+    # Use LLM to select the best URLs for this research
     prompt = """
-        From the results below, select the two URLs that will provide the most bibliographical events 
-        (key life events, publications, historical records, detailed timelines) about 
-        the subject's life in relation to the research question.
+        From the search results below, select the two URLs that will provide the most relevant information
+        about the research question. Look for authoritative sources, detailed content, and relevance.
 
-        <Results>
+        <Search Results>
         {results}
-        </Results>
+        </Search Results>
 
         <Research Question>
         {research_question}
@@ -80,28 +94,16 @@ def url_finder(
 
     """
 
-    prompt = prompt.format(results=urls, research_question=research_question)
+    # Format URLs with titles for better LLM selection
+    formatted_results = "\n".join([
+        f"- {result.url} | {result.title}"
+        for result in search_results
+    ])
+
+    prompt = prompt.format(results=formatted_results, research_question=research_question)
 
     structured_llm = create_llm_structured_model(config=config, class_name=BestUrls)
-
     structured_result = structured_llm.invoke(prompt)
-
-    # return Command(
-    #     goto=END,
-    #     update={
-    #         "existing_events": CategoriesWithEvents(
-    #             early="test", personal="test", career="test", legacy="test"
-    #         ),
-    #         "used_domains": ["en.wikipedia.org", "www.britannica.com"],
-    #     },
-    # )
-
-    ### call to tavily/duck duck go
-    # urls = model.invoke(research_question)
-    # urls = [
-    #     "https://en.wikipedia.org/wiki/Henry_Miller",
-    #     "https://www.britannica.com/biography/Henry-Miller",
-    # ]
 
     return Command(
         goto="should_process_url_router",

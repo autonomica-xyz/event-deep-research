@@ -43,6 +43,14 @@
 
 ## 🌟 What's New
 
+**v2.1 - Open Source Search Providers**
+
+- 🔍 **Pluggable Search Providers**: Use Tavily, Brave, DuckDuckGo, or SearXNG
+- 🆓 **100% Free Option**: DuckDuckGo search requires NO API key
+- 🏠 **Self-Hosted Option**: SearXNG for complete control
+- 💰 **Free Tiers**: Brave Search offers 2,000 queries/month free
+- 🔧 **Auto-Detection**: Automatically selects best available provider
+
 **v2.0 - Generalized Research System**
 
 - ✨ **Pluggable Research Types**: Easily add new research domains without modifying core code
@@ -51,6 +59,22 @@
 - 📚 **Topic Research**: General-purpose research for any subject
 - 🎯 **Custom Research Types**: Create your own with minimal code (see [examples/add_custom_research_type.py](examples/add_custom_research_type.py))
 - 🔧 **Backward Compatible**: Existing biography research continues to work
+
+## Available Search Providers
+
+| Provider | Cost | API Key | Setup | Best For |
+|----------|------|---------|-------|----------|
+| **DuckDuckGo** | Free ∞ | ❌ No | None | Development, personal projects, privacy |
+| **Brave** | Free (2K/mo) | ✅ Yes | Sign up | Production, high quality results |
+| **SearXNG** | Free ∞ | ❌ No | Self-host | Full control, unlimited queries |
+| **Tavily** | Paid | ✅ Yes | Subscribe | Original, high quality (optional) |
+
+**Quick Setup:**
+- **DuckDuckGo**: Works out of the box, no configuration needed!
+- **Brave**: Get API key at https://brave.com/search/api/ (free tier: 2,000/month)
+- **SearXNG**: `docker run -d -p 8888:8080 searxng/searxng` then set `SEARXNG_URL=http://localhost:8888`
+
+See [examples/search_provider_comparison.py](examples/search_provider_comparison.py) to test all providers.
 
 ## Features
 
@@ -178,10 +202,17 @@ uv sync
 # 3. Set up environment variables
 cp .env.example .env
 # Edit .env with your API keys:
-# - FIRECRAWL_API_KEY (required for web scraping)
-# - TAVILY_API_KEY (required for web search)
+# Required:
 # - OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY
 #   (Choose your preferred LLM provider)
+#
+# Optional (for web scraping):
+# - FIRECRAWL_API_KEY (if not set, will use alternative scraping methods)
+#
+# Optional (search providers - DuckDuckGo works out of box!):
+# - BRAVE_API_KEY (free tier: 2,000 queries/month)
+# - SEARXNG_URL (self-hosted instance URL)
+# - TAVILY_API_KEY (original provider, now optional)
 
 # 4. Start the development server
 uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.12 langgraph dev --allow-blocking
@@ -215,18 +246,28 @@ uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.12 lang
 
 See the [examples/](examples/) directory for complete examples:
 
+**Research Types:**
 - `biography_research.py` - Research historical figures
 - `company_research.py` - Research companies
 - `market_research.py` - Analyze markets
 - `topic_research.py` - Research any topic
 - `add_custom_research_type.py` - Create your own research type
 
+**Search Providers:**
+- `using_duckduckgo_search.py` - Use DuckDuckGo (100% free, no API key)
+- `using_brave_search.py` - Use Brave Search API (free tier)
+- `using_searxng.py` - Use SearXNG (self-hosted)
+- `search_provider_comparison.py` - Compare all providers
+
 ```bash
 # Run a biography research example
 python examples/biography_research.py
 
-# Run a company research example
-python examples/company_research.py
+# Run with DuckDuckGo (no API key needed!)
+python examples/using_duckduckgo_search.py
+
+# Compare all available search providers
+python examples/search_provider_comparison.py
 ```
 
 ## Creating Custom Research Types
@@ -277,6 +318,9 @@ class Configuration(BaseModel):
     # Research type to use (biography, company, market, topic, etc.)
     research_type: str = "biography"
 
+    # Search provider (auto-detects if None)
+    search_provider: str | None = None  # tavily, brave, duckduckgo, searxng
+
     # Primary LLM model for all tasks
     llm_model: str = "google_genai:gemini-2.5-flash"
 
@@ -299,6 +343,11 @@ class Configuration(BaseModel):
     max_tool_iterations: int = 5
     max_chunks: int = 20
 ```
+
+**Search Provider Selection:**
+- If `search_provider` is None, auto-detects based on available API keys
+- Priority: Tavily → Brave → SearXNG → DuckDuckGo
+- DuckDuckGo always works as fallback (no API key needed)
 
 **Supported Models:**
 - OpenAI: `openai:gpt-4-turbo`, `openai:gpt-3.5-turbo`
@@ -368,12 +417,13 @@ Each research type defines:
 
 ## Roadmap / Future Work
 
-- [ ] **Open Source Search**: Replace Tavily with SearXNG or Brave Search
+- [x] **Open Source Search**: ✅ Implemented! (DuckDuckGo, Brave, SearXNG)
 - [ ] **Open Source Scraping**: Replace Firecrawl with Playwright/Trafilatura
-- [ ] **Research Type Library**: More built-in types (product, scientific paper, etc.)
+- [ ] **Research Type Library**: More built-in types (product, scientific paper, legislation)
 - [ ] **Multimedia Support**: Add images and videos to research output
 - [ ] **Performance**: Improve merge agent speed
 - [ ] **Observability**: Enhanced LangSmith/Langfuse integration
+- [ ] **Custom Search Providers**: Easy interface for adding custom search backends
 
 ## Contributing
 
@@ -403,8 +453,11 @@ Distributed under the MIT License. See `LICENSE.txt` for details.
 - **[LangChain](https://github.com/langchain-ai/langchain)** - Foundational LLM framework
 - **[LangGraph](https://github.com/langchain-ai/langgraph)** - Multi-agent orchestration
 - **[Open Deep Research](https://github.com/langchain-ai/open_deep_research)** - Research methodology inspiration
-- **[Tavily](https://tavily.ai/)** - Web search (to be replaced with open source)
-- **[Firecrawl](https://www.firecrawl.com/)** - Web scraping (to be replaced with open source)
+- **[Brave Search](https://brave.com/search/api/)** - Privacy-focused search API
+- **[DuckDuckGo](https://duckduckgo.com/)** - Privacy-focused search
+- **[SearXNG](https://github.com/searxng/searxng)** - Self-hosted meta-search engine
+- **[Tavily](https://tavily.ai/)** - Original web search provider (optional)
+- **[Firecrawl](https://www.firecrawl.com/)** - Web scraping
 
 [contributors-shield]: https://img.shields.io/github/contributors/autonomica-xyz/event-deep-research.svg?style=for-the-badge
 [contributors-url]: https://github.com/autonomica-xyz/event-deep-research/graphs/contributors
