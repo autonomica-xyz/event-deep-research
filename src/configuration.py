@@ -8,6 +8,18 @@ from pydantic import BaseModel, Field
 class Configuration(BaseModel):
     """Main configuration class for the Deep Research agent."""
 
+    # Research type configuration
+    research_type: str = Field(
+        default="biography",
+        description="Type of research to perform: biography, company, market, topic, etc.",
+    )
+
+    # Search provider configuration
+    search_provider: str | None = Field(
+        default=None,
+        description="Search provider to use: tavily, brave, duckduckgo, searxng. If None, uses auto-detection.",
+    )
+
     # Single model for most providers (simplified configuration)
     llm_model: str = Field(
         default="google_genai:gemini-2.5-flash",

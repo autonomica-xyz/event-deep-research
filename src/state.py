@@ -1,21 +1,29 @@
 """Defines the Pydantic models and TypedDicts for the research agent graph.
 This file serves as the schema for data structures, agent tools, and state management.
+
+The state models have been generalized to support multiple research types (biography, company, market, etc.).
+Research-type-specific models are defined in src/research_types/*.py files.
 """
 
 import operator
-from typing import Annotated, List, TypedDict
+from typing import Annotated, Any, List, TypedDict
 
 from langchain_core.messages import MessageLikeRepresentation
 from pydantic import BaseModel, Field
 
 ################################################################################
-# Section 1: Core Data Models
-# - Defines the structure of the primary research output: the chronological timeline.
+# Section 1: Core Data Models (DEPRECATED - kept for backward compatibility)
+# - These biography-specific models are now defined in src/research_types/biography.py
+# - They remain here for backward compatibility with existing code
 ################################################################################
 
 
 class ChronologyDate(BaseModel):
-    """A structured representation of a date for a chronological event."""
+    """A structured representation of a date for a chronological event.
+
+    DEPRECATED: This is now defined in src/research_types/biography.py
+    Kept here for backward compatibility.
+    """
 
     year: int | None = Field(None, description="The year of the event.")
     note: str | None = Field(
@@ -24,7 +32,11 @@ class ChronologyDate(BaseModel):
 
 
 class ChronologyEventInput(BaseModel):
-    """Represents a single event, typically used for initial data extraction before an ID is assigned."""
+    """Represents a single event, typically used for initial data extraction before an ID is assigned.
+
+    DEPRECATED: This is now defined in src/research_types/biography.py
+    Kept here for backward compatibility.
+    """
 
     name: str = Field(description="A short, title-like name for the event.")
     description: str = Field(description="A concise description of the event.")
@@ -35,7 +47,11 @@ class ChronologyEventInput(BaseModel):
 
 
 class ChronologyEvent(ChronologyEventInput):
-    """The final, canonical event model with a unique identifier."""
+    """The final, canonical event model with a unique identifier.
+
+    DEPRECATED: This is now defined in src/research_types/biography.py
+    Kept here for backward compatibility.
+    """
 
     id: str = Field(
         description="The id of the event in lowercase and underscores. Ex: 'word1_word2'"
@@ -43,18 +59,32 @@ class ChronologyEvent(ChronologyEventInput):
 
 
 class ChronologyInput(BaseModel):
-    """A list of newly extracted events from a research source."""
+    """A list of newly extracted events from a research source.
+
+    DEPRECATED: This is now defined in src/research_types/biography.py
+    Kept here for backward compatibility.
+    """
 
     events: list[ChronologyEventInput]
 
 
 class Chronology(BaseModel):
-    """A complete chronological timeline with finalized (ID'd) events."""
+    """A complete chronological timeline with finalized (ID'd) events.
+
+    DEPRECATED: This is now defined in src/research_types/biography.py
+    Kept here for backward compatibility.
+    """
 
     events: list[ChronologyEvent]
 
 
 class CategoriesWithEvents(BaseModel):
+    """Biographical events organized by life phases.
+
+    DEPRECATED: This is now defined in src/research_types/biography.py
+    Kept here for backward compatibility.
+    """
+
     early: str = Field(
         default="",
         description="Covers childhood, upbringing, family, education, and early influences that shaped the author.",
@@ -109,11 +139,53 @@ def override_reducer(current_value, new_value):
     return operator.add(current_value, new_value)
 
 
-# --- Main Supervisor Graph State ---
+# --- Main Supervisor Graph State (Generalized for all research types) ---
 
 
 class SupervisorStateInput(TypedDict):
-    """The initial input to start the main research graph."""
+    """The initial input to start the main research graph.
+
+    This state is now generic and works with any research type.
+    """
+
+    research_subject: str  # Generic: can be person, company, market, topic, etc.
+    research_type: str  # Type of research: 'biography', 'company', 'market', 'topic'
+    existing_data: Any = Field(
+        default=None,
+        description="Accumulated research data (structure depends on research type).",
+    )
+    used_domains: list[str] = Field(
+        default=[],
+        description="The domains that have been used to extract information.",
+    )
+    data_summary: str = Field(
+        default="",
+        description="A summary of gaps in the current research data.",
+    )
+
+
+class SupervisorState(SupervisorStateInput):
+    """The complete state for the main supervisor graph.
+
+    This state works with any research type through the research_type field.
+    """
+
+    conversation_history: Annotated[list[MessageLikeRepresentation], override_reducer]
+    iteration_count: int = 0
+    structured_output: Any | None = Field(
+        default=None,
+        description="Final structured output (type depends on research type).",
+    )
+
+
+# --- Backward Compatibility Aliases ---
+# These allow old code using person_to_research to still work
+
+class SupervisorStateInputLegacy(TypedDict):
+    """DEPRECATED: Use SupervisorStateInput with research_subject instead.
+
+    This is kept for backward compatibility with existing tests and code.
+    """
 
     person_to_research: str
     existing_events: CategoriesWithEvents = Field(
@@ -130,8 +202,11 @@ class SupervisorStateInput(TypedDict):
     )
 
 
-class SupervisorState(SupervisorStateInput):
-    """The complete state for the main supervisor graph."""
+class SupervisorStateLegacy(SupervisorStateInputLegacy):
+    """DEPRECATED: Use SupervisorState with research_type instead.
+
+    This is kept for backward compatibility with existing tests and code.
+    """
 
     final_events: List[ChronologyEvent]
     conversation_history: Annotated[list[MessageLikeRepresentation], override_reducer]

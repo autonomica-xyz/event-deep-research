@@ -13,6 +13,7 @@ dependencies = [
     "langchain-openai>=0.3.33",
     "langchain-ollama>=0.3.8",
     "langchain-tavily>=0.2.11",
+    "duckduckgo-search>=7.2.0",
     "tiktoken>=0.11.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=0.24.0",

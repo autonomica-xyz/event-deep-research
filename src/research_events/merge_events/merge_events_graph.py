@@ -1,4 +1,4 @@
-from typing import List, Literal, TypedDict
+from typing import Any, List, Literal, TypedDict
 
 from langchain_core.tools import tool
 from langgraph.graph import START, StateGraph
@@ -13,6 +13,9 @@ from src.research_events.merge_events.prompts import (
     MERGE_EVENTS_TEMPLATE,
 )
 from src.research_events.merge_events.utils import ensure_categories_with_events
+from src.research_events.merge_events.utils import (
+    ensure_categories_with_events as ensure_data_structure,
+)
 from src.services.event_service import EventService
 from src.state import CategoriesWithEvents
 from src.url_crawler.utils import chunk_text_by_tokens
@@ -41,37 +44,40 @@ class IrrelevantChunk(BaseModel):
 
 
 class InputMergeEventsState(TypedDict):
-    """The complete state for the enhanced event merging sub-graph."""
+    """The complete state for the enhanced event merging sub-graph.
 
-    existing_events: CategoriesWithEvents
-    extracted_events: str
+    Now uses generic field names to support multiple research types.
+    """
+
+    existing_data: Any  # Changed from existing_events - can be any structure
+    extracted_data: str  # Changed from extracted_events
     research_question: str
 
 
 class MergeEventsState(InputMergeEventsState):
     text_chunks: List[str]  # token-based chunks
-    categorized_chunks: List[CategoriesWithEvents]  # results per chunk
-    extracted_events_categorized: CategoriesWithEvents
+    categorized_chunks: List[Any]  # results per chunk (structure depends on research type)
+    extracted_data_categorized: Any  # Changed from extracted_events_categorized
 
 
 class OutputMergeEventsState(TypedDict):
-    existing_events: CategoriesWithEvents  # includes the existing events + the events from the new events
+    existing_data: Any  # includes the existing data + the data from the new extraction
 
 
 async def split_events(
     state: MergeEventsState,
 ) -> Command[Literal["filter_chunks", "__end__"]]:
-    """Use token-based chunking from URL crawler and filter for biographical events"""
-    extracted_events = state.get("extracted_events", "")
+    """Use token-based chunking from URL crawler and filter for relevant data"""
+    extracted_data = state.get("extracted_data", "")
 
-    if not extracted_events.strip():
+    if not extracted_data.strip():
         # No content to process
         return Command(
             goto="__end__",
             update={"text_chunks": [], "categorized_chunks": []},
         )
 
-    chunks = await chunk_text_by_tokens(extracted_events)
+    chunks = await chunk_text_by_tokens(extracted_data)
 
     return Command(
         goto="filter_chunks",
@@ -170,51 +176,55 @@ async def extract_and_categorize_chunk(
 
 async def merge_categorizations(
     state: MergeEventsState,
-) -> Command[Literal["combine_new_and_original_events"]]:
-    """Merge all categorized chunks into a single CategoriesWithEvents"""
+) -> Command[Literal["combine_new_and_original_data"]]:
+    """Merge all categorized chunks into a single data structure"""
     results = state.get("categorized_chunks", [])
 
     merged = EventService.merge_categorized_events(results)
 
     return Command(
-        goto="combine_new_and_original_events",
-        update={"extracted_events_categorized": merged},
+        goto="combine_new_and_original_data",
+        update={"extracted_data_categorized": merged},
     )
 
 
-async def combine_new_and_original_events(
+async def combine_new_and_original_data(
     state: MergeEventsState, config: RunnableConfig
 ) -> Command:
-    """Merge original and new events for each category using an LLM."""
-    print("Combining new and original events...")
+    """Merge original and new data for each category using an LLM.
 
-    existing_events_raw = state.get(
-        "existing_events",
+    NOTE: This currently uses biography-specific logic (CategoriesWithEvents).
+    Future enhancement: Make this research-type-aware.
+    """
+    print("Combining new and original data...")
+
+    existing_data_raw = state.get(
+        "existing_data",
         CategoriesWithEvents(early="", personal="", career="", legacy=""),
     )
-    new_events_raw = state.get(
-        "extracted_events_categorized",
+    new_data_raw = state.get(
+        "extracted_data_categorized",
         CategoriesWithEvents(early="", personal="", career="", legacy=""),
     )
 
     # Convert to proper Pydantic models if they're dicts
-    existing_events = ensure_categories_with_events(existing_events_raw)
-    new_events = ensure_categories_with_events(new_events_raw)
+    existing_data = ensure_categories_with_events(existing_data_raw)
+    new_data = ensure_categories_with_events(new_data_raw)
 
-    if not new_events or not any(
-        getattr(new_events, cat, "").strip()
+    if not new_data or not any(
+        getattr(new_data, cat, "").strip()
         for cat in CategoriesWithEvents.model_fields.keys()
     ):
-        print("No new events found. Keeping existing events.")
-        return Command(goto="__end__", update={"existing_events": existing_events})
+        print("No new data found. Keeping existing data.")
+        return Command(goto="__end__", update={"existing_data": existing_data})
 
     merge_tasks = []
     categories = CategoriesWithEvents.model_fields.keys()
 
     for category in categories:
         # Now you can safely use getattr since they're guaranteed to be Pydantic models
-        existing_text = getattr(existing_events, category, "").strip()
-        new_text = getattr(new_events, category, "").strip()
+        existing_text = getattr(existing_data, category, "").strip()
+        new_text = getattr(new_data, category, "").strip()
 
         if not (existing_text or new_text):
             continue  # nothing to merge in this category
@@ -244,10 +254,10 @@ async def combine_new_and_original_events(
     # Ensure all categories are included
     for category in CategoriesWithEvents.model_fields.keys():
         if category not in final_merged_dict:
-            final_merged_dict[category] = getattr(existing_events, category, "")
+            final_merged_dict[category] = getattr(existing_data, category, "")
 
     final_merged_output = CategoriesWithEvents(**final_merged_dict)
-    return Command(goto="__end__", update={"existing_events": final_merged_output})
+    return Command(goto="__end__", update={"existing_data": final_merged_output})
 
 
 merge_events_graph_builder = StateGraph(
@@ -261,7 +271,7 @@ merge_events_graph_builder.add_node(
 )
 merge_events_graph_builder.add_node("merge_categorizations", merge_categorizations)
 merge_events_graph_builder.add_node(
-    "combine_new_and_original_events", combine_new_and_original_events
+    "combine_new_and_original_data", combine_new_and_original_data  # Renamed
 )
 
 merge_events_graph_builder.add_edge(START, "split_events")
