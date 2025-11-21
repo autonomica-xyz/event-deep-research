@@ -7,7 +7,7 @@
 
 # Deep Research Agent
 
-**Generalized AI-powered research agent** that can perform deep research on any topic with pluggable research types. Originally built for biographical research, now supports **company research, market analysis, topic exploration, and custom research types**.
+**Generalized AI-powered research agent** that can perform deep research on any topic with pluggable research types. Originally built for biographical research, now supports **people research, company research, market analysis, topic exploration, and custom research types**.
 
 <img src="media/event-deep-research.webp" alt="Deep Research Agent" width="600"/>
 
@@ -90,6 +90,7 @@ See [examples/search_provider_comparison.py](examples/search_provider_comparison
 | Research Type | Description | Output Schema |
 |--------------|-------------|---------------|
 | **Biography** | Historical figures, people | Chronological timeline of life events |
+| **People** | Individuals, public figures | Comprehensive profile with categorized facts |
 | **Company** | Businesses, organizations | Company profile with facts by category |
 | **Market** | Industries, markets | Market insights and analysis |
 | **Topic** | General knowledge | Structured sections with key points |
@@ -133,6 +134,51 @@ print(result["structured_output"])
       "location": "Stockholm, Sweden"
     }
   ]
+}
+```
+
+### People Research
+
+Research individuals and extract comprehensive profiles:
+
+```python
+result = await graph.ainvoke({
+    "research_subject": "Elon Musk",
+    "research_type": "people"
+})
+
+# Output: PeopleProfile with categorized facts
+print(result["structured_output"])
+# PeopleProfile(person_name="Elon Musk", summary="...", facts=[...])
+```
+
+**Example Output:**
+```json
+{
+  "structured_output": {
+    "person_name": "Elon Musk",
+    "summary": "Entrepreneur and business magnate known for founding and leading multiple technology companies including Tesla, SpaceX, and Neuralink.",
+    "facts": [
+      {
+        "category": "demographics",
+        "title": "Birth and Early Life",
+        "content": "Born June 28, 1971 in Pretoria, South Africa. Moved to Canada at age 17...",
+        "source_date": "2024"
+      },
+      {
+        "category": "professional",
+        "title": "CEO of Tesla and SpaceX",
+        "content": "Currently serves as CEO of Tesla Inc. and SpaceX, leading innovation in electric vehicles and space exploration...",
+        "source_date": "2024"
+      },
+      {
+        "category": "achievements",
+        "title": "World's Richest Person",
+        "content": "Became the world's wealthiest person in 2021, with a net worth exceeding $200 billion...",
+        "source_date": "2024"
+      }
+    ]
+  }
 }
 ```
 
@@ -248,6 +294,7 @@ See the [examples/](examples/) directory for complete examples:
 
 **Research Types:**
 - `biography_research.py` - Research historical figures
+- `people_research.py` - Research individuals and public figures
 - `company_research.py` - Research companies
 - `market_research.py` - Analyze markets
 - `topic_research.py` - Research any topic

@@ -21,6 +21,7 @@ from src.research_types.base import ResearchType
 from src.research_types.biography import BiographyResearchType
 from src.research_types.company import CompanyResearchType
 from src.research_types.market import MarketResearchType
+from src.research_types.people import PeopleResearchType
 from src.research_types.registry import ResearchTypeRegistry
 from src.research_types.topic import TopicResearchType
 
@@ -28,6 +29,7 @@ from src.research_types.topic import TopicResearchType
 ResearchTypeRegistry.register(BiographyResearchType())
 ResearchTypeRegistry.register(CompanyResearchType())
 ResearchTypeRegistry.register(MarketResearchType())
+ResearchTypeRegistry.register(PeopleResearchType())
 ResearchTypeRegistry.register(TopicResearchType())
 
 __all__ = [
@@ -36,5 +38,6 @@ __all__ = [
     "BiographyResearchType",
     "CompanyResearchType",
     "MarketResearchType",
+    "PeopleResearchType",
     "TopicResearchType",
 ]
