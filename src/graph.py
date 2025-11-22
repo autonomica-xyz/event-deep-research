@@ -1,3 +1,4 @@
+import asyncio
 from typing import Literal
 
 from langchain_core.messages import (
@@ -95,7 +96,8 @@ async def supervisor_tools_node(
 ) -> Command[Literal["supervisor", "structure_output"]]:
     """The 'hands' of the agent. Executes tools and returns a Command for routing.
 
-    This node is now generic and works with any research type.
+    This node now supports parallel execution of ResearchEventsTool calls,
+    enabling breadth-first research across multiple domains simultaneously.
     """
     # Get research type from state
     research_type_name = state.get("research_type", "biography")
@@ -116,8 +118,9 @@ async def supervisor_tools_node(
     if not last_message.tool_calls or exceeded_allowed_iterations:
         return Command(goto="structure_output")
 
-    # This is the core logic for executing tools and updating state.
+    # Separate tool calls by type for parallel execution
     all_tool_messages = []
+    research_tool_calls = []
 
     for tool_call in last_message.tool_calls:
         tool_name = tool_call["name"]
@@ -128,7 +131,6 @@ async def supervisor_tools_node(
 
         elif tool_name == "think_tool":
             # The 'think' tool is special: it just records a reflection.
-            # The reflection will be in the message history for the *next* supervisor turn.
             response_content = tool_args["reflection"]
             all_tool_messages.append(
                 ToolMessage(
@@ -139,32 +141,57 @@ async def supervisor_tools_node(
             )
 
         elif tool_name == "ResearchEventsTool":
-            research_question = tool_args["research_question"]
+            # Collect research tool calls for parallel execution
+            research_tool_calls.append(tool_call)
+
+    # Execute all research tool calls in parallel for breadth-first research
+    if research_tool_calls:
+        print(f"--- Executing {len(research_tool_calls)} research queries in parallel ---")
+
+        async def execute_research(tool_call):
+            """Execute a single research query."""
+            research_question = tool_call["args"]["research_question"]
+            print(f"  → Researching: {research_question}")
+
             result = await research_events_app.ainvoke(
                 {
                     "research_question": research_question,
-                    "existing_data": existing_data,  # Generic field name
+                    "existing_data": existing_data,
                     "used_domains": used_domains,
                 }
             )
+            return result, tool_call["id"]
+
+        # Execute all research queries in parallel
+        research_results = await asyncio.gather(
+            *[execute_research(tc) for tc in research_tool_calls]
+        )
+
+        # Merge results from parallel research
+        for result, tool_call_id in research_results:
             existing_data = result["existing_data"]
-            used_domains = result["used_domains"]
+            used_domains.extend(result["used_domains"])
 
-            # Use research type's summarizer prompt
-            summarizer_prompt = research_type.get_event_summarizer_prompt()
-            summarizer_formatted = summarizer_prompt.format(existing_data=existing_data)
-            response = await create_llm_structured_model(config=config).ainvoke(
-                summarizer_formatted
-            )
-
-            data_summary = response.content
             all_tool_messages.append(
                 ToolMessage(
                     content="Called ResearchEventsTool and returned research data",
-                    tool_call_id=tool_call["id"],
-                    name=tool_name,
+                    tool_call_id=tool_call_id,
+                    name="ResearchEventsTool",
                 )
             )
+
+        # Deduplicate used_domains
+        used_domains = list(set(used_domains))
+
+        # Generate summary after all parallel research is complete
+        summarizer_prompt = research_type.get_event_summarizer_prompt()
+        summarizer_formatted = summarizer_prompt.format(existing_data=existing_data)
+        response = await create_llm_structured_model(config=config).ainvoke(
+            summarizer_formatted
+        )
+        data_summary = response.content
+
+        print(f"--- Parallel research complete. Summary: {data_summary[:100]}... ---")
 
     # The Command helper tells the graph where to go next and what state to update.
     return Command(

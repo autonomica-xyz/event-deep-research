@@ -79,6 +79,7 @@ See [examples/search_provider_comparison.py](examples/search_provider_comparison
 ## Features
 
 - **Multiple Research Types**: Biography, Company, Market, Topic, and Custom
+- **Breadth-First Parallel Research**: People research executes 7 domain queries in parallel for comprehensive coverage
 - **Supervisor Agent**: Coordinates workflow with multiple tools (Research, Think, Finish)
 - **Smart Merging**: Deduplicate and combine information from multiple sources
 - **Multi-Model Support**: OpenAI, Anthropic, Google, or Local models (Ollama)
@@ -90,7 +91,7 @@ See [examples/search_provider_comparison.py](examples/search_provider_comparison
 | Research Type | Description | Output Schema |
 |--------------|-------------|---------------|
 | **Biography** | Historical figures, people | Chronological timeline of life events |
-| **People** | Individuals, public figures | Comprehensive profile with categorized facts |
+| **People** | Individuals, public figures (breadth-first parallel research) | Comprehensive profile with categorized facts across 7 domains |
 | **Company** | Businesses, organizations | Company profile with facts by category |
 | **Market** | Industries, markets | Market insights and analysis |
 | **Topic** | General knowledge | Structured sections with key points |
@@ -137,9 +138,9 @@ print(result["structured_output"])
 }
 ```
 
-### People Research
+### People Research (Breadth-First Parallel Strategy)
 
-Research individuals and extract comprehensive profiles:
+Research individuals using **parallel breadth-first search** across 7 domains:
 
 ```python
 result = await graph.ainvoke({
@@ -147,12 +148,21 @@ result = await graph.ainvoke({
     "research_type": "people"
 })
 
-# Output: PeopleProfile with categorized facts
+# Output: PeopleProfile with categorized facts from 7 parallel research domains
 print(result["structured_output"])
 # PeopleProfile(person_name="Elon Musk", summary="...", facts=[...])
 ```
 
-**Example Output:**
+**Research Domains (executed in parallel):**
+1. Professional & Social Media (LinkedIn, career)
+2. Technical Contributions (GitHub, open source)
+3. Cryptocurrency/Blockchain (Bitcoin, crypto projects)
+4. Publications & Media (articles, interviews)
+5. Business & Legal (companies, startups)
+6. Academic & Education (degrees, research)
+7. Community & Speaking (conferences, talks)
+
+**Example Output (from parallel breadth-first search):**
 ```json
 {
   "structured_output": {
@@ -172,9 +182,21 @@ print(result["structured_output"])
         "source_date": "2024"
       },
       {
-        "category": "achievements",
-        "title": "World's Richest Person",
-        "content": "Became the world's wealthiest person in 2021, with a net worth exceeding $200 billion...",
+        "category": "technical_contributions",
+        "title": "Open Source Contributions",
+        "content": "Released Tesla's electric vehicle patents to open source in 2014...",
+        "source_date": "2014"
+      },
+      {
+        "category": "crypto_blockchain",
+        "title": "Cryptocurrency Advocacy",
+        "content": "Active supporter of Dogecoin and Bitcoin, Tesla briefly accepted BTC payments...",
+        "source_date": "2021"
+      },
+      {
+        "category": "business_ventures",
+        "title": "Multiple Company Founder",
+        "content": "Founded/co-founded PayPal, SpaceX, Tesla, Neuralink, The Boring Company, and X (Twitter)...",
         "source_date": "2024"
       }
     ]

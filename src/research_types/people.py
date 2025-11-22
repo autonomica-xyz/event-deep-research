@@ -9,17 +9,18 @@ from src.llm_service import create_llm_structured_model
 from src.research_types.base import ResearchType
 
 
-# Data structure for accumulating research
+# Data structure for accumulating research (breadth-first across 7 domains)
 class PeopleData(BaseModel):
-    """People research organized by information type."""
+    """People research organized by information type from 7 parallel research domains."""
 
+    # Core biographical data
     demographics: str = Field(
         default="",
         description="Age, nationality, location, ethnicity, background",
     )
     professional: str = Field(
         default="",
-        description="Career, skills, accomplishments, expertise, work history",
+        description="Career, current job, skills, expertise, work history, LinkedIn profile",
     )
     relationships: str = Field(
         default="",
@@ -38,13 +39,35 @@ class PeopleData(BaseModel):
         description="Controversies, legal issues, criticisms, challenges",
     )
 
+    # Breadth-first domain-specific fields
+    technical_contributions: str = Field(
+        default="",
+        description="GitHub projects, open source contributions, code repositories, technical work",
+    )
+    crypto_blockchain: str = Field(
+        default="",
+        description="Bitcoin involvement, cryptocurrency projects, blockchain work, crypto community presence",
+    )
+    business_ventures: str = Field(
+        default="",
+        description="Companies founded, business registrations, startups, entrepreneurship",
+    )
+    academic_background: str = Field(
+        default="",
+        description="Education, universities, degrees, academic research, publications",
+    )
+    community_engagement: str = Field(
+        default="",
+        description="Conference talks, presentations, community involvement, speaking engagements",
+    )
+
 
 # Output schema - what the final result looks like
 class PeopleFact(BaseModel):
     """A single fact about a person."""
 
     category: str = Field(
-        description="Category (demographics, professional, relationships, public_presence, achievements, controversies)"
+        description="Category (demographics, professional, relationships, public_presence, achievements, controversies, technical_contributions, crypto_blockchain, business_ventures, academic_background, community_engagement)"
     )
     title: str = Field(description="Short title for this fact")
     content: str = Field(description="Detailed information")
@@ -77,29 +100,34 @@ class PeopleResearchType(ResearchType):
 
     def get_supervisor_prompt(self) -> str:
         return """
-You are a meticulous people research agent. Your primary directive is to build a comprehensive profile for: **{research_subject}**.
+You are a meticulous people research agent using a **BREADTH-FIRST** research strategy. Your primary directive is to build a comprehensive profile for: **{research_subject}**.
 
-<Core Execution Cycle>
-On every turn, you MUST follow these steps in order:
+<Research Strategy: BREADTH-FIRST PARALLEL APPROACH>
 
-1.  **Step 1: Check for Completion.**
-    *   Examine the `<Information Missing>`. If it explicitly states the research is COMPLETE, you MUST immediately call the `FinishResearchTool` and stop.
-    *   If gaps remain, proceed to Step 2.
+**INITIAL RESEARCH PHASE (First Turn Only):**
+If this is your first turn (check `<Last Message>` - it will be empty or say "Start the research process"), you MUST:
+1. Launch PARALLEL research across ALL 7 research domains simultaneously
+2. Call `ResearchEventsTool` SEVEN TIMES with different research questions (one per domain)
+3. Each query should target a specific domain listed below
 
-2.  **Step 2: Analyze and Plan (if needed).**
-    *   Review `<Last Message>` to understand what just happened.
-    *   If you just called `ResearchEventsTool`, you MUST call `think_tool` to assess what was learned and plan your next move.
-    *   If you just called `think_tool`, you MUST call `ResearchEventsTool` with the search query you planned.
-    *   Use `think_tool` to formulate your EXACT search query before calling `ResearchEventsTool`.
+**Research Domains (Cover ALL in parallel on first turn):**
 
-3.  **Step 3: Execute Research.**
-    *   Call `ResearchEventsTool` with your planned query to gather information.
-</Core Execution Cycle>
+1. **Professional & Social Media**: "{research_subject} LinkedIn profile career employment job title company"
+2. **Technical Contributions**: "{research_subject} GitHub repositories open source projects code contributions"
+3. **Cryptocurrency/Blockchain**: "{research_subject} Bitcoin cryptocurrency blockchain crypto projects"
+4. **Publications & Media**: "{research_subject} articles blog posts interviews publications media"
+5. **Business & Legal**: "{research_subject} company founder business registration startup"
+6. **Academic & Education**: "{research_subject} education university degree academic research papers"
+7. **Community & Speaking**: "{research_subject} conference speaker presentation talks community involvement"
 
-**CRITICAL CONSTRAINTS:**
-*   NEVER call `ResearchEventsTool` twice in a row.
-*   NEVER call `think_tool` twice in a row.
-*   ALWAYS call exactly ONE tool per turn.
+**IMPORTANT:** On your FIRST turn, you MUST make SEVEN parallel `ResearchEventsTool` calls. Do NOT call think_tool first. Do NOT call one at a time. Make ALL SEVEN calls in a single response.
+
+**GAP-FILLING PHASE (Subsequent Turns):**
+After the initial parallel research:
+1. Check `<Information Missing>` - if it says "COMPLETE", call `FinishResearchTool`
+2. If gaps exist, use `think_tool` to analyze what's missing
+3. Call `ResearchEventsTool` with targeted query to fill specific gaps
+4. Repeat until complete
 
 <Information Missing>
 {data_summary}
@@ -110,57 +138,87 @@ On every turn, you MUST follow these steps in order:
 </Last Message>
 
 <Available Tools>
-*   `ResearchEventsTool`: Searches for information about the person. Takes a research_question parameter.
-*   `FinishResearchTool`: Ends the research process. Call this ONLY when the research is complete.
-*   `think_tool`: Use this to analyze results and plan the EXACT search query for your next action.
-
-**CRITICAL: Use think_tool before calling ResearchEventsTool to plan your approach, and after each ResearchEventsTool to assess progress. Do not call think_tool two times in a row.**
+*   `ResearchEventsTool`: Searches for information. Takes a research_question parameter. CAN BE CALLED MULTIPLE TIMES IN PARALLEL.
+*   `FinishResearchTool`: Ends research. Call ONLY when complete.
+*   `think_tool`: Analyze results and plan next steps.
 </Available Tools>
 
-Focus on gathering:
-1. **Demographics**: Age, nationality, location, ethnicity, educational background
-2. **Professional**: Career history, current role, skills, expertise, accomplishments
-3. **Relationships**: Family, spouse, children, colleagues, mentors, business partners
-4. **Public Presence**: Social media activity, publications, interviews, media coverage, online presence
-5. **Achievements**: Awards, recognition, notable contributions, impact on field/society
-6. **Controversies**: Any controversies, legal issues, criticisms, challenges they've faced
+<Execution Instructions>
+**IF THIS IS YOUR FIRST TURN:**
+- Make SEVEN `ResearchEventsTool` calls RIGHT NOW (one for each domain above)
+- Use the exact query templates provided
+- DO NOT use think_tool first
+- DO NOT call tools one at a time
 
-**Search Query Strategy:**
-- Be specific: Use full name + specific aspect (e.g., "John Doe career history", "Jane Smith awards")
-- For public figures: Search for recent news, interviews, profiles
-- For professionals: Search for LinkedIn, company pages, industry publications
-- For academics: Search for publications, university pages, research profiles
-- For entrepreneurs: Search for company information, startup databases, tech news
+**IF THIS IS A SUBSEQUENT TURN:**
+- Check if research is COMPLETE → call `FinishResearchTool`
+- If gaps exist → use `think_tool` to plan → then call `ResearchEventsTool` for missing data
+- Continue until all domains are thoroughly researched
 
-**CRITICAL:** Execute ONLY ONE tool call now, following the `<Core Execution Cycle>`.
+**Categories to populate:**
+- Demographics: Age, nationality, location, background
+- Professional: Career, current role, expertise, work history
+- Relationships: Family, colleagues, mentors, partners
+- Public Presence: Social media, publications, interviews
+- Achievements: Awards, recognition, contributions
+- Controversies: Legal issues, criticisms, challenges
+
+**CRITICAL:** If `<Last Message>` is empty or says "Start the research process", make ALL SEVEN `ResearchEventsTool` calls NOW.
+</Execution Instructions>
 """
 
     def get_event_summarizer_prompt(self) -> str:
         return """
-Analyze the following people research and identify the 2-3 biggest gaps. Be brief and specific.
+You are analyzing people research data from a BREADTH-FIRST search across 7 domains.
+
+**Research Domains Checklist:**
+1. ✓ Professional & Social Media (LinkedIn, career, employment)
+2. ✓ Technical Contributions (GitHub, open source, code)
+3. ✓ Cryptocurrency/Blockchain (Bitcoin, crypto projects)
+4. ✓ Publications & Media (articles, interviews, media)
+5. ✓ Business & Legal (companies, startups, registrations)
+6. ✓ Academic & Education (degrees, universities, research)
+7. ✓ Community & Speaking (conferences, presentations)
 
 **Person Information:**
 {existing_data}
 
-<Example Gaps>
-- Missing professional background and career history
-- Missing personal relationships and family information
-- Missing achievements and recognition
-- Missing public presence and social media activity
-- Missing demographic information
-</Example Gaps>
+**Your Task:**
+Analyze each of the 6 data categories (demographics, professional, relationships, public_presence, achievements, controversies) and determine:
+- Which categories have substantial information?
+- Which categories are missing or weak?
+- Are there any glaring gaps across the 7 research domains?
 
-If the research appears complete across all categories, respond with: "Research is COMPLETE."
+<Decision Criteria>
+**Research is COMPLETE if:**
+- Demographics section has age/nationality/location info
+- Professional section has career/role/expertise info
+- At least 3 of the 7 research domains yielded substantive results
+- Person is identifiable and well-documented
 
+**Research needs MORE if:**
+- Multiple categories are empty or very sparse
+- Person seems notable but info is missing
+- Less than 3 research domains found information
+
+</Decision Criteria>
+
+<Output Format>
+If COMPLETE, respond ONLY with: "Research is COMPLETE."
+
+If gaps exist, list the 2-3 most critical missing areas:
 **Gaps:**
+- [Specific missing information]
+- [Specific missing information]
+</Output Format>
 """
 
     def get_structure_prompt(self) -> str:
-        return """You are a biographical research specialist. Convert the people research data into structured JSON.
+        return """You are a biographical research specialist. Convert the people research data from a BREADTH-FIRST search into structured JSON.
 
 <Task>
-Extract key facts from the research data and structure them as JSON. Each fact should have:
-- category: Which aspect of the person (demographics, professional, relationships, public_presence, achievements, controversies)
+Extract key facts from the research data across ALL categories and structure them as JSON. Each fact should have:
+- category: Which aspect (demographics, professional, relationships, public_presence, achievements, controversies, technical_contributions, crypto_blockchain, business_ventures, academic_background, community_engagement)
 - title: A short descriptive title
 - content: The detailed information
 - source_date: When this information was published (if available, otherwise null)
@@ -170,11 +228,20 @@ Also provide:
 - summary: A 2-3 sentence overview of who this person is and why they're notable
 </Task>
 
-<People Research Data>
+<People Research Data from 7 Parallel Domains>
+The data below was gathered through breadth-first parallel research across:
+1. Professional & Social Media
+2. Technical Contributions
+3. Cryptocurrency/Blockchain
+4. Publications & Media
+5. Business & Legal
+6. Academic & Education
+7. Community & Speaking
+
 ----
 {existing_data}
 ----
-</People Research Data>
+</People Research Data from 7 Parallel Domains>
 
 CRITICAL: Return only the structured JSON output. No commentary or explanations.
 """
@@ -190,20 +257,27 @@ CRITICAL: Return only the structured JSON output. No commentary or explanations.
             public_presence="",
             achievements="",
             controversies="",
+            technical_contributions="",
+            crypto_blockchain="",
+            business_ventures="",
+            academic_background="",
+            community_engagement="",
         )
 
     async def structure_output(
         self, existing_data: PeopleData, config: RunnableConfig
     ) -> dict:
-        """Structures people research into a profile."""
-        print("--- Structuring People Profile ---")
+        """Structures people research into a profile from breadth-first search."""
+        print("--- Structuring People Profile (Breadth-First Data) ---")
 
         if not existing_data:
             print("Warning: No people data found in state")
             return {"structured_output": None}
 
-        # Combine all people data
+        # Combine all people data from 11 categories (6 core + 5 breadth-first domains)
         combined_data = f"""
+=== CORE CATEGORIES ===
+
 Demographics:
 {existing_data.demographics}
 
@@ -221,6 +295,23 @@ Achievements:
 
 Controversies:
 {existing_data.controversies}
+
+=== BREADTH-FIRST DOMAIN DATA ===
+
+Technical Contributions (GitHub, Open Source):
+{existing_data.technical_contributions}
+
+Cryptocurrency/Blockchain:
+{existing_data.crypto_blockchain}
+
+Business Ventures:
+{existing_data.business_ventures}
+
+Academic Background:
+{existing_data.academic_background}
+
+Community Engagement:
+{existing_data.community_engagement}
 """
 
         structured_llm = create_llm_structured_model(
@@ -229,5 +320,8 @@ Controversies:
 
         prompt = self.get_structure_prompt().format(existing_data=combined_data)
         response = await structured_llm.ainvoke(prompt)
+
+        print(f"--- Structured profile for: {response.person_name} ---")
+        print(f"--- Total facts: {len(response.facts)} ---")
 
         return {"structured_output": response}
