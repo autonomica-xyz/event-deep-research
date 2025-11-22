@@ -28,6 +28,50 @@ config = Configuration()
 MAX_TOOL_CALL_ITERATIONS = config.max_tool_iterations
 
 
+def merge_data_objects(data_objects: list, research_type) -> any:
+    """Merge multiple data objects from parallel research into a single combined object.
+
+    This function handles merging results from parallel research queries.
+    For Pydantic models with string fields, it concatenates all non-empty values.
+
+    Args:
+        data_objects: List of data objects (Pydantic models) from parallel queries
+        research_type: The research type to get the initial data structure
+
+    Returns:
+        A single merged data object of the same type
+    """
+    if not data_objects:
+        return research_type.get_initial_data_structure()
+
+    # Get the model class from the first object
+    if not data_objects[0]:
+        return research_type.get_initial_data_structure()
+
+    model_class = type(data_objects[0])
+
+    # For Pydantic models, merge field by field
+    merged_dict = {}
+
+    # Get all field names from the model
+    field_names = model_class.model_fields.keys()
+
+    for field_name in field_names:
+        # Collect all non-empty values for this field from all objects
+        field_values = []
+        for obj in data_objects:
+            if obj:  # Check obj exists
+                value = getattr(obj, field_name, "")
+                if value and value.strip():  # Only add non-empty strings
+                    field_values.append(value.strip())
+
+        # Combine all values with newlines
+        merged_dict[field_name] = "\n\n".join(field_values) if field_values else ""
+
+    # Create a new instance of the model with merged data
+    return model_class(**merged_dict)
+
+
 # Verify connection
 # if langfuse.auth_check():
 #     print("Langfuse client is authenticated and ready!")
@@ -162,14 +206,31 @@ async def supervisor_tools_node(
             )
             return result, tool_call["id"]
 
-        # Execute all research queries in parallel
-        research_results = await asyncio.gather(
-            *[execute_research(tc) for tc in research_tool_calls]
-        )
+        # Execute all research queries in parallel with error handling
+        try:
+            research_results = await asyncio.gather(
+                *[execute_research(tc) for tc in research_tool_calls],
+                return_exceptions=True  # Don't fail if one query fails
+            )
+        except Exception as e:
+            print(f"Error during parallel research execution: {e}")
+            # Fall back to existing data if parallel execution fails
+            research_results = []
 
-        # Merge results from parallel research
-        for result, tool_call_id in research_results:
-            existing_data = result["existing_data"]
+        # Properly merge results from all parallel research queries
+        # Instead of overwriting, we need to combine data from all results
+        all_tool_messages = []
+        all_data_objects = []
+
+        for result_or_exception in research_results:
+            # Check if this result is an exception
+            if isinstance(result_or_exception, Exception):
+                print(f"Warning: One research query failed: {result_or_exception}")
+                continue  # Skip failed queries
+
+            result, tool_call_id = result_or_exception
+
+            all_data_objects.append(result["existing_data"])
             used_domains.extend(result["used_domains"])
 
             all_tool_messages.append(
@@ -179,6 +240,12 @@ async def supervisor_tools_node(
                     name="ResearchEventsTool",
                 )
             )
+
+        print(f"--- Successfully completed {len(all_data_objects)} out of {len(research_tool_calls)} parallel queries ---")
+
+        # Merge all data objects into one
+        # This works for Pydantic models with string fields
+        existing_data = merge_data_objects(all_data_objects, research_type)
 
         # Deduplicate used_domains
         used_domains = list(set(used_domains))

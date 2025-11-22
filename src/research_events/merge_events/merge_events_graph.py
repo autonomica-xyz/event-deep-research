@@ -191,46 +191,65 @@ async def merge_categorizations(
 async def combine_new_and_original_data(
     state: MergeEventsState, config: RunnableConfig
 ) -> Command:
-    """Merge original and new data for each category using an LLM.
+    """Merge original and new data for each field using an LLM.
 
-    NOTE: This currently uses biography-specific logic (CategoriesWithEvents).
-    Future enhancement: Make this research-type-aware.
+    This function is now GENERIC and works with any Pydantic model.
+    It dynamically detects the data type and merges all string fields.
     """
     print("Combining new and original data...")
 
-    existing_data_raw = state.get(
-        "existing_data",
-        CategoriesWithEvents(early="", personal="", career="", legacy=""),
-    )
-    new_data_raw = state.get(
-        "extracted_data_categorized",
-        CategoriesWithEvents(early="", personal="", career="", legacy=""),
-    )
+    existing_data_raw = state.get("existing_data")
+    new_data_raw = state.get("extracted_data_categorized")
 
-    # Convert to proper Pydantic models if they're dicts
-    existing_data = ensure_categories_with_events(existing_data_raw)
-    new_data = ensure_categories_with_events(new_data_raw)
+    # If no existing data, use new data
+    if not existing_data_raw:
+        if not new_data_raw:
+            print("No data to merge. Returning empty.")
+            return Command(goto="__end__", update={"existing_data": None})
+        print("No existing data. Using new data.")
+        return Command(goto="__end__", update={"existing_data": new_data_raw})
 
-    if not new_data or not any(
-        getattr(new_data, cat, "").strip()
-        for cat in CategoriesWithEvents.model_fields.keys()
-    ):
+    # Determine data type - could be CategoriesWithEvents, PeopleData, etc.
+    data_type = type(existing_data_raw)
+
+    # For biography compatibility: ensure it's CategoriesWithEvents if needed
+    if data_type.__name__ == "CategoriesWithEvents":
+        existing_data = ensure_categories_with_events(existing_data_raw)
+        new_data = ensure_categories_with_events(new_data_raw) if new_data_raw else existing_data
+    else:
+        # For other types (PeopleData, CompanyData, etc.), use as-is
+        existing_data = existing_data_raw
+        new_data = new_data_raw if new_data_raw else existing_data
+
+    # Check if there's any new data to merge
+    if not new_data:
         print("No new data found. Keeping existing data.")
         return Command(goto="__end__", update={"existing_data": existing_data})
 
-    merge_tasks = []
-    categories = CategoriesWithEvents.model_fields.keys()
+    # Get all field names from the model dynamically
+    field_names = data_type.model_fields.keys()
 
-    for category in categories:
-        # Now you can safely use getattr since they're guaranteed to be Pydantic models
-        existing_text = getattr(existing_data, category, "").strip()
-        new_text = getattr(new_data, category, "").strip()
+    # Check if there's any non-empty new data
+    has_new_data = any(
+        getattr(new_data, field, "").strip() for field in field_names
+    )
+
+    if not has_new_data:
+        print("No new data found. Keeping existing data.")
+        return Command(goto="__end__", update={"existing_data": existing_data})
+
+    # Merge each field in parallel
+    merge_tasks = []
+
+    for field_name in field_names:
+        existing_text = getattr(existing_data, field_name, "").strip()
+        new_text = getattr(new_data, field_name, "").strip()
 
         if not (existing_text or new_text):
-            continue  # nothing to merge in this category
+            continue  # nothing to merge in this field
 
-        existing_display = existing_text if existing_text else "No events"
-        new_display = new_text if new_text else "No events"
+        existing_display = existing_text if existing_text else "No data"
+        new_display = new_text if new_text else "No data"
 
         prompt = MERGE_EVENTS_TEMPLATE.format(
             original=existing_display, new=new_display
@@ -240,23 +259,25 @@ async def combine_new_and_original_data(
         from src.llm_service import create_llm_structured_model
 
         merge_tasks.append(
-            (category, create_llm_structured_model(config=config).ainvoke(prompt))
+            (field_name, create_llm_structured_model(config=config).ainvoke(prompt))
         )
 
     final_merged_dict = {}
     if merge_tasks:
-        categories, tasks = zip(*merge_tasks)
+        field_names_to_merge, tasks = zip(*merge_tasks)
         responses = await asyncio.gather(*tasks)
         final_merged_dict = {
-            cat: resp.content for cat, resp in zip(categories, responses)
+            field: resp.content for field, resp in zip(field_names_to_merge, responses)
         }
 
-    # Ensure all categories are included
-    for category in CategoriesWithEvents.model_fields.keys():
-        if category not in final_merged_dict:
-            final_merged_dict[category] = getattr(existing_data, category, "")
+    # Ensure all fields are included (even ones that weren't merged)
+    for field_name in field_names:
+        if field_name not in final_merged_dict:
+            final_merged_dict[field_name] = getattr(existing_data, field_name, "")
 
-    final_merged_output = CategoriesWithEvents(**final_merged_dict)
+    # Create new instance of the same type with merged data
+    final_merged_output = data_type(**final_merged_dict)
+    print(f"--- Merged data into {data_type.__name__} ---")
     return Command(goto="__end__", update={"existing_data": final_merged_output})
 
 
